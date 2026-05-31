@@ -154,10 +154,9 @@
 <h1>Training metrics</h1>
 
 <div class="controls">
-  <label for="api">endpoint</label>
-  <input type="text" id="api" placeholder="https://...modal.run" />
+  <span class="muted">Reading local metrics from <code>metrics_export/</code>.</span>
   <button id="refresh" type="button">Refresh</button>
-  <span class="toggle"><input type="checkbox" id="auto" checked /><label for="auto">auto-poll</label></span>
+  <span class="toggle"><input type="checkbox" id="auto" /><label for="auto">auto-poll</label></span>
 </div>
 
 <div class="err" id="err"></div>
@@ -198,13 +197,15 @@
 (function () {
   "use strict";
 
-  var POLL_RUNNING = 3000;   // ms while any shown run is running
-  var POLL_DONE = 30000;     // ms once all done
-  var LS_KEY = "metrics_api_url";
-  var DEFAULT_API = "https://tonghuikang--arc-agi-3-autoresearch-train-metrics-api.modal.run";
+  var POLL_RUNNING = 3000;   // ms between polls while any shown run is still running
+  // The dashboard reads static local files bundled next to this page — no remote
+  // endpoint. metrics_export/index.json is a compact per-run summary for the
+  // all-runs views (Frontier, Table); the Model view fetches a run's full
+  // record from metrics_export/<run_id>.json on demand.
+  var INDEX_URL = "metrics_export/index.json";
+  function runUrl(id) { return "metrics_export/" + encodeURIComponent(id) + ".json"; }
 
   var els = {
-    api: document.getElementById("api"),
     run: document.getElementById("run"),
     refresh: document.getElementById("refresh"),
     auto: document.getElementById("auto"),
@@ -648,7 +649,7 @@
     els.tableWrap.innerHTML = html + "</tbody></table>";
   }
 
-  function refreshTable(base) {
+  function refreshTable() {
     fetchAll()
       .then(function (res) {
         showErr("");
@@ -660,7 +661,7 @@
         schedule();
       })
       .catch(function (e) {
-        showErr("fetch failed: " + e.message + " (retrying)");
+        showErr("load failed: " + e.message + " (retrying)");
         schedule();
       });
   }
@@ -708,10 +709,6 @@
 
   // ---- fetching -----------------------------------------------------------
 
-  function apiBase() {
-    return (els.api.value || "").trim().replace(/\/+$/, "");
-  }
-
   function fetchJson(url) {
     return fetch(url, { cache: "no-store" }).then(function (r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
@@ -719,26 +716,11 @@
     });
   }
 
-  // Returns a promise resolving to {allMap, runs}. Tries ?run=all; if the
-  // endpoint omits the `all` object (current deployment), fetches each run.
+  // Returns a promise resolving to {allMap, runs} from the local index (the
+  // ?run=all shape: {runs, all}). `all` holds per-run summaries — enough for the
+  // Frontier and Table views; the Model view fetches full curves per run.
   function fetchAll() {
-    var base = apiBase();
-    return fetchJson(base + "?run=all").then(function (j) {
-      var n = normalizeAll(j);
-      if (Object.keys(n.allMap).length) return n;
-      // Fall back: fetch each run id individually and assemble the map.
-      var runs = j && j.runs ? j.runs : [];
-      if (!runs.length) return { allMap: {}, runs: [] };
-      return Promise.all(runs.map(function (id) {
-        return fetchJson(base + "?run=" + encodeURIComponent(id))
-          .then(function (rj) { return { id: id, rec: (rj && rj.data) || null }; })
-          .catch(function () { return { id: id, rec: null }; });
-      })).then(function (results) {
-        var map = {};
-        results.forEach(function (res) { if (res.rec) map[res.id] = res.rec; });
-        return { allMap: map, runs: runs };
-      });
-    });
+    return fetchJson(INDEX_URL).then(function (j) { return normalizeAll(j); });
   }
 
   // ---- poll cadence -------------------------------------------------------
@@ -753,8 +735,10 @@
   function schedule() {
     if (pollTimer) clearTimeout(pollTimer);
     if (!els.auto.checked) return;
-    var delay = anyRunning() ? POLL_RUNNING : POLL_DONE;
-    pollTimer = setTimeout(refresh, delay);
+    // The local snapshot is static once every run is done — only keep polling
+    // while something is still running (e.g. a live, locally-regenerated file).
+    if (!anyRunning()) return;
+    pollTimer = setTimeout(refresh, POLL_RUNNING);
   }
 
   // ---- top-level refresh per current view --------------------------------
@@ -765,21 +749,16 @@
       schedule();
       return;
     }
-    var base = apiBase();
-    if (!base) {
-      showErr("Enter an endpoint URL.");
-      return;
-    }
     if (currentView === "model") {
-      refreshModel(base);
+      refreshModel();
     } else if (currentView === "table") {
-      refreshTable(base);
+      refreshTable();
     } else {
-      refreshMulti(base);
+      refreshMulti();
     }
   }
 
-  function refreshModel(base) {
+  function refreshModel() {
     // Pick a run by real id: the current selection, else the ?model= deep link,
     // else the newest. No magic "latest" run; a sweep's runs all appear listed.
     fetchAll()
@@ -796,11 +775,11 @@
           schedule();
           return;
         }
-        // ?run=all gives summaries (no per-step `train`); fetch the full record
-        // for just the selected run so the Model chart has its loss curves.
-        fetchJson(base + "?run=" + encodeURIComponent(id))
-          .then(function (rj) {
-            var rec = (rj && rj.data) || res.allMap[id];
+        // The index carries only summaries; fetch the selected run's full file
+        // (per-step `train`/`val` curves) on demand. Fall back to the summary
+        // if that file is missing.
+        fetchJson(runUrl(id))
+          .then(function (rec) {
             renderModel(rec, res.runs, id);
             updateStatuses(rec ? [rec.status] : []);
             schedule();
@@ -812,12 +791,12 @@
           });
       })
       .catch(function (e) {
-        showErr("fetch failed: " + e.message + " (retrying)");
+        showErr("load failed: " + e.message + " (retrying)");
         schedule();
       });
   }
 
-  function refreshMulti(base) {
+  function refreshMulti() {
     fetchAll()
       .then(function (res) {
         showErr("");
@@ -830,7 +809,7 @@
         schedule();
       })
       .catch(function (e) {
-        showErr("fetch failed: " + e.message + " (retrying)");
+        showErr("load failed: " + e.message + " (retrying)");
         schedule();
       });
   }
@@ -888,15 +867,6 @@
 
   // ---- init / wiring ------------------------------------------------------
 
-  function initApi() {
-    var url = qp("api") || localStorage.getItem(LS_KEY) || DEFAULT_API;
-    els.api.value = url;
-  }
-
-  els.api.addEventListener("change", function () {
-    localStorage.setItem(LS_KEY, els.api.value.trim());
-    refresh();
-  });
   els.run.addEventListener("change", function () {
     setModelParam(els.run.value);   // deep-link the selected run via ?model=
     refresh();
@@ -923,7 +893,6 @@
     });
   }
 
-  initApi();
   makeModelChart();
   charts.val = makeMultiRunChart("chartVal", { xTitle: "validation time", timeAxis: true, legend: false, pointId: true });
 
@@ -932,18 +901,11 @@
   seedVariantDocs(window.__VARIANTS__);
   loadVariantDocs().then(function () { if (currentView === "model" && !isDemo()) refresh(); });
 
-  // Restore the active tab from ?view= (deep link); default to Model.
+  // Restore the active tab from ?view= (deep link); default to Frontier. Each
+  // view loads what it needs from the local metrics_export/ files via refresh().
   var startView = qp("view");
   if (["frontier", "table", "model"].indexOf(startView) === -1) startView = "frontier";
-
-  // Demo via ?demo=1 loads the bundled sample file (?run=all shape).
-  if (qp("demo") === "1" && !window.__DEMO_METRICS__) {
-    fetchJson("sample_metrics.json")
-      .then(function (j) { window.__DEMO_METRICS__ = j; switchView(startView); })
-      .catch(function (e) { showErr("demo load failed: " + e.message); });
-  } else {
-    switchView(startView);
-  }
+  switchView(startView);
 
   // Test/automation hooks.
   window.__switchView = switchView;
