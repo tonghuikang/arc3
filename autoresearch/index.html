@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Training metrics</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<!-- Variant design docs. Generated from ../model_variants/variants.jsonl; loaded
+<!-- Variant design docs. Generated from model_variants/variants.jsonl; loaded
      via <script> so the design panel works even when opened over file:// (where
      browsers block fetch() of local files). When served over http the script
      also re-fetches variants.jsonl directly for freshness. -->
-<script src="../model_variants/variants.js"></script>
+<script src="model_variants/variants.js"></script>
 <style>
   :root {
     --fg: #1a1a1a;
@@ -213,7 +213,7 @@
     tableNote: document.getElementById("tableNote"),
   };
 
-  // ---- variant design docs (from ../model_variants/variants.jsonl) ---------
+  // ---- variant design docs (from model_variants/variants.jsonl) ---------
   // Maps variant name -> design object. Seeded synchronously from the
   // <script>-loaded window.__VARIANTS__ (works on file://), then refreshed by
   // fetching variants.jsonl directly when the page is served over http.
@@ -234,7 +234,7 @@
   }
   function loadVariantDocs() {
     seedVariantDocs(window.__VARIANTS__);  // file:// path: already available
-    return fetch("../model_variants/variants.jsonl", { cache: "no-store" })
+    return fetch("model_variants/variants.jsonl", { cache: "no-store" })
       .then(function (r) { if (!r.ok) throw new Error("http"); return r.text(); })
       .then(function (t) { seedVariantDocs(parseJsonl(t)); })
       .catch(function () { /* file:// blocks fetch; the script global covers it */ });

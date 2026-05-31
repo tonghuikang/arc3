@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 """Build metrics_export/index.json for the training-metrics dashboard.
 
-metrics.html loads this compact index for the Frontier and Table views (which
+index.html loads this compact index for the Frontier and Table views (which
 need every run at once); the Model view then fetches each run's full
 metrics_export/<run_id>.json on demand. So the index only carries the few
 fields those all-runs views read — not the per-step training curves.
 
 Run it any time runs are added/changed:
 
-    python training/build_metrics_index.py
+    python autoresearch/build_metrics_index.py
 
-It scans training/metrics_export/*.json and rewrites metrics_export/index.json.
+It scans autoresearch/metrics_export/*.json and rewrites metrics_export/index.json.
 """
 
 from __future__ import annotations

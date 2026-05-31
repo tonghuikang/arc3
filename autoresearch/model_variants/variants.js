@@ -1,5 +1,5 @@
 // AUTO-GENERATED from variants.jsonl — do not edit by hand.
-// Lets metrics.html load variant design docs when opened via file:// (browsers block fetch() of local files).
+// Lets index.html load variant design docs when opened via file:// (browsers block fetch() of local files).
 window.__VARIANTS__ = [
   {
     "variant": "tiny",
