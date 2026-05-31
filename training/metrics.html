@@ -1,0 +1,955 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Training metrics</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- Variant design docs. Generated from ../model_variants/variants.jsonl; loaded
+     via <script> so the design panel works even when opened over file:// (where
+     browsers block fetch() of local files). When served over http the script
+     also re-fetches variants.jsonl directly for freshness. -->
+<script src="../model_variants/variants.js"></script>
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --muted: #777;
+    --line: #e4e4e4;
+    --bg: #fff;
+    --accent: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+    padding: 28px 24px;
+    max-width: 900px;
+  }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 18px; }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .controls label { color: var(--muted); font-size: 12px; }
+  input[type=text] {
+    font: inherit;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    min-width: 320px;
+    flex: 1 1 320px;
+  }
+  select, button {
+    font: inherit;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    cursor: pointer;
+  }
+  button:hover { border-color: #bbb; }
+  .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 18px;
+  }
+  .tab {
+    appearance: none;
+    border: none;
+    background: none;
+    border-radius: 0;
+    padding: 8px 12px;
+    color: var(--muted);
+    font: inherit;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--fg); }
+  .tab.active { color: var(--fg); font-weight: 600; border-bottom-color: var(--accent); }
+  .view { display: none; }
+  .view.active { display: block; }
+  .runrow { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    align-items: baseline;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .status .k { color: var(--muted); }
+  .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+  }
+  .badge.running { background: #fef3c7; color: #92400e; }
+  .badge.done { background: #dcfce7; color: #166534; }
+  .badge.none { background: #f1f1f1; color: #777; }
+  .bar {
+    height: 4px;
+    background: var(--line);
+    border-radius: 2px;
+    margin: 10px 0 22px;
+    overflow: hidden;
+  }
+  .bar > div {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width .3s ease;
+  }
+  .chartwrap { position: relative; height: 360px; }
+  .err {
+    color: #b91c1c;
+    font-size: 12px;
+    min-height: 16px;
+    margin-bottom: 8px;
+  }
+  .caption { color: var(--muted); font-size: 12px; margin: 12px 0 0; }
+  .note { color: var(--muted); font-size: 13px; padding: 24px 0; }
+  .muted { color: var(--muted); }
+  .design {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 0 0 16px;
+    background: #fafafa;
+    font-size: 12.5px;
+  }
+  .design .tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #3730a3;
+    font-size: 11px;
+    margin-left: 4px;
+  }
+  .design .spatial { color: var(--muted); margin: 3px 0; }
+  .design .summary { color: var(--fg); margin-top: 4px; }
+  table.lb { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  table.lb th, table.lb td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.lb th { color: var(--muted); font-weight: 600; }
+  table.lb td.num, table.lb th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.lb tr.best td { background: #eff6ff; }
+  table.lb a.run { color: var(--accent); cursor: pointer; text-decoration: none; }
+  table.lb a.run:hover { text-decoration: underline; }
+  table.lb .badge { font-size: 10px; }
+</style>
+</head>
+<body>
+<h1>Training metrics</h1>
+
+<div class="controls">
+  <label for="api">endpoint</label>
+  <input type="text" id="api" placeholder="https://...modal.run" />
+  <button id="refresh" type="button">Refresh</button>
+  <span class="toggle"><input type="checkbox" id="auto" checked /><label for="auto">auto-poll</label></span>
+</div>
+
+<div class="err" id="err"></div>
+
+<div class="tabs">
+  <button class="tab active" data-view="frontier" type="button">Frontier</button>
+  <button class="tab" data-view="table" type="button">Table</button>
+  <button class="tab" data-view="model" type="button">Model</button>
+</div>
+
+<!-- View 1: Model (single run) -->
+<section class="view" id="view-model">
+  <div class="runrow">
+    <label for="run">run</label>
+    <select id="run"></select>
+  </div>
+  <div class="status" id="status"><span class="muted">no data yet</span></div>
+  <div class="design" id="design" style="display:none"></div>
+  <div class="bar"><div id="barfill"></div></div>
+  <div class="chartwrap"><canvas id="chartModel"></canvas></div>
+</section>
+
+<!-- View 2: Validation (frontier) -->
+<section class="view active" id="view-frontier">
+  <div class="chartwrap"><canvas id="chartVal"></canvas></div>
+  <div class="note" id="valNote" style="display:none"></div>
+  <p class="caption">Validation total loss vs <strong>validation time</strong> (wall-clock), held-out <strong>non-variant (base) games</strong>. Every experiment is a point; the <strong>frontier</strong> (running-best loss) is drawn on top as a descending staircase. Hover a point for its run id.</p>
+</section>
+
+<!-- View 3: Table (leaderboard) -->
+<section class="view" id="view-table">
+  <div id="tableWrap"></div>
+  <div class="note" id="tableNote" style="display:none"></div>
+  <p class="caption">All experiments, best validation loss first. Click a run to open it in the Model view.</p>
+</section>
+
+<script>
+(function () {
+  "use strict";
+
+  var POLL_RUNNING = 3000;   // ms while any shown run is running
+  var POLL_DONE = 30000;     // ms once all done
+  var LS_KEY = "metrics_api_url";
+  var DEFAULT_API = "https://tonghuikang--arc-agi-3-autoresearch-train-metrics-api.modal.run";
+
+  var els = {
+    api: document.getElementById("api"),
+    run: document.getElementById("run"),
+    refresh: document.getElementById("refresh"),
+    auto: document.getElementById("auto"),
+    err: document.getElementById("err"),
+    status: document.getElementById("status"),
+    barfill: document.getElementById("barfill"),
+    valNote: document.getElementById("valNote"),
+    design: document.getElementById("design"),
+    tableWrap: document.getElementById("tableWrap"),
+    tableNote: document.getElementById("tableNote"),
+  };
+
+  // ---- variant design docs (from ../model_variants/variants.jsonl) ---------
+  // Maps variant name -> design object. Seeded synchronously from the
+  // <script>-loaded window.__VARIANTS__ (works on file://), then refreshed by
+  // fetching variants.jsonl directly when the page is served over http.
+  var VARIANT_DOCS = {};
+
+  function seedVariantDocs(arr) {
+    if (!Array.isArray(arr)) return;
+    arr.forEach(function (d) { if (d && d.variant) VARIANT_DOCS[d.variant] = d; });
+  }
+  function parseJsonl(text) {
+    var out = [];
+    (text || "").split(/\r?\n/).forEach(function (ln) {
+      ln = ln.trim();
+      if (!ln) return;
+      try { out.push(JSON.parse(ln)); } catch (e) { /* skip bad line */ }
+    });
+    return out;
+  }
+  function loadVariantDocs() {
+    seedVariantDocs(window.__VARIANTS__);  // file:// path: already available
+    return fetch("../model_variants/variants.jsonl", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error("http"); return r.text(); })
+      .then(function (t) { seedVariantDocs(parseJsonl(t)); })
+      .catch(function () { /* file:// blocks fetch; the script global covers it */ });
+  }
+  // "vit_silu-1780183421" -> "vit_silu" (strip the trailing -<timestamp>).
+  function variantOf(runId) {
+    return runId ? String(runId).replace(/-\d+$/, "") : null;
+  }
+
+  var LOSS_KEYS = ["total", "action", "color", "coord"];
+  var COLORS = { total: "#2563eb", action: "#16a34a", color: "#d97706", coord: "#db2777" };
+  // Distinct palette for comparing runs.
+  var RUN_PALETTE = ["#2563eb", "#db2777", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#dc2626", "#65a30d"];
+
+  var charts = { model: null, all: null, val: null };
+  var pollTimer = null;
+  var lastStatuses = [];        // statuses of all runs currently shown (for poll cadence)
+  var currentView = "model";
+
+  function qp(name) {
+    return new URLSearchParams(location.search).get(name);
+  }
+
+  function isDemo() {
+    return !!window.__DEMO_METRICS__;
+  }
+
+  function showErr(msg) {
+    els.err.textContent = msg || "";
+  }
+
+  // ---- record helpers -----------------------------------------------------
+
+  // Each run's logged training rows. Prefer `train`, fall back to legacy `steps`.
+  function trainRows(rec) {
+    if (!rec) return [];
+    var rows = rec.train || rec.steps || [];
+    return Array.isArray(rows) ? rows : [];
+  }
+  function valRows(rec) {
+    if (!rec) return [];
+    var rows = rec.val || [];
+    return Array.isArray(rows) ? rows : [];
+  }
+  function runLabel(rec, id) {
+    if (rec && rec.config && rec.config.variant && id) {
+      // Prefer the run_id (more specific); variant is shown via tooltip-friendly id anyway.
+      return rec.run_id || id;
+    }
+    return (rec && rec.run_id) || id || "?";
+  }
+
+  // ---- chart construction -------------------------------------------------
+
+  function baseLineDataset(label, color) {
+    return {
+      label: label,
+      data: [],
+      borderColor: color,
+      backgroundColor: color,
+      borderWidth: 1.5,
+      pointRadius: 2,
+      tension: 0.25,
+    };
+  }
+
+  function makeModelChart() {
+    var ctx = document.getElementById("chartModel").getContext("2d");
+    charts.model = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: LOSS_KEYS.map(function (k) { return baseLineDataset(k, COLORS[k]); }),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: { title: { display: true, text: "step" }, grid: { color: "#f2f2f2" } },
+          y: { title: { display: true, text: "loss" }, grid: { color: "#f2f2f2" }, beginAtZero: false },
+        },
+        plugins: { legend: { position: "top", labels: { boxWidth: 12, font: { size: 11 } } } },
+      },
+    });
+  }
+
+  function clockHMS(sec) {
+    if (sec == null || isNaN(sec)) return "";
+    var d = new Date(sec * 1000);
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+  }
+
+  // A multi-run chart on a linear x axis. View 2 uses x = datapoints; view 3
+  // (validation) uses x = wall-clock validation time (opts.timeAxis).
+  function makeMultiRunChart(canvasId, opts) {
+    opts = opts || {};
+    var ctx = document.getElementById(canvasId).getContext("2d");
+    var xScale = {
+      type: "linear",
+      title: { display: true, text: opts.xTitle || "datapoints" },
+      grid: { color: "#f2f2f2" },
+    };
+    var tooltip = {};
+    var cbs = {};
+    if (opts.timeAxis) {
+      xScale.ticks = { callback: function (v) { return clockHMS(v); } };
+      cbs.title = function (items) { return items.length ? clockHMS(items[0].parsed.x) : ""; };
+    }
+    if (opts.pointId) {
+      // Identify each point by its run id (used when the legend is hidden).
+      cbs.label = function (item) {
+        var id = (item.raw && item.raw.id) || (item.dataset && item.dataset.label) || "";
+        return id + ": " + Number(item.parsed.y).toFixed(3);
+      };
+    }
+    if (Object.keys(cbs).length) tooltip = { callbacks: cbs };
+    return new Chart(ctx, {
+      type: "line",
+      data: { datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        parsing: false,             // we provide {x,y} points directly
+        interaction: { mode: "nearest", intersect: false },
+        scales: {
+          x: xScale,
+          y: { title: { display: true, text: "total loss" }, grid: { color: "#f2f2f2" }, beginAtZero: false },
+        },
+        plugins: {
+          legend: { display: opts.legend !== false, position: "top", labels: { boxWidth: 12, font: { size: 11 } } },
+          tooltip: tooltip,
+        },
+      },
+    });
+  }
+
+  // ---- view 1: Model ------------------------------------------------------
+
+  function fmtTime(sec) {
+    if (sec == null || isNaN(sec)) return "-";
+    sec = Math.round(sec);
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return m > 0 ? m + "m " + s + "s" : s + "s";
+  }
+  function span(k, v) {
+    return '<span><span class="k">' + k + "</span> " + v + "</span>";
+  }
+  function num(n) { return (n == null) ? "-" : Number(n).toLocaleString(); }
+
+  // Newest run id by trailing -<timestamp> (falls back to last listed). A sweep
+  // creates several runs "at once", so there is no single magic "latest" run —
+  // the selector lists real run ids and defaults to the most recent.
+  function newestRun(runsList) {
+    if (!runsList || !runsList.length) return null;
+    var best = runsList[runsList.length - 1], bestT = -1;
+    runsList.forEach(function (r) {
+      var m = /-(\d+)$/.exec(r);
+      var t = m ? parseInt(m[1], 10) : -1;
+      if (t >= bestT) { bestT = t; best = r; }
+    });
+    return best;
+  }
+
+  // Resolve the ?model= deep-link param to a run id: exact run id if present,
+  // else the newest run of that variant name (e.g. ?model=resnet_silu).
+  function resolveRunFromParam(runsList) {
+    var m = qp("model");
+    if (!m || !runsList || !runsList.length) return null;
+    if (runsList.indexOf(m) !== -1) return m;
+    var byVariant = runsList.filter(function (r) { return variantOf(r) === m; });
+    return byVariant.length ? newestRun(byVariant) : null;
+  }
+  // Keep ?model= in sync with the selected run (deep-linkable, like ?view=).
+  function setModelParam(runId) {
+    try {
+      var u = new URL(location.href);
+      if (runId) u.searchParams.set("model", runId);
+      else u.searchParams.delete("model");
+      history.replaceState(null, "", u);
+    } catch (e) { /* file:// may reject replaceState in some browsers */ }
+  }
+
+  function populateRunSelector(runsList, selected) {
+    if (!runsList || !runsList.length) return;
+    var cur = els.run.value;
+    var opts = "";
+    runsList.forEach(function (r) { opts += '<option value="' + r + '">' + r + "</option>"; });
+    els.run.innerHTML = opts;
+    if (cur && runsList.indexOf(cur) !== -1) {
+      els.run.value = cur;
+    } else if (selected && runsList.indexOf(selected) !== -1) {
+      els.run.value = selected;
+    } else {
+      // Honour the ?model= deep-link as the default selection (even in the
+      // frontier/table views) so switching to the Model tab keeps the linked
+      // run instead of snapping to the newest one.
+      els.run.value = resolveRunFromParam(runsList) || newestRun(runsList);
+    }
+  }
+
+  // Show the selected run's architecture design (from variants.jsonl).
+  function renderDesign(rec) {
+    if (!els.design) return;
+    var name = (rec && rec.config && rec.config.variant) || variantOf(rec && rec.run_id);
+    var d = name ? VARIANT_DOCS[name] : null;
+    if (!d) { els.design.style.display = "none"; els.design.innerHTML = ""; return; }
+    var tags = [];
+    if (d.family) tags.push('<span class="tag">' + d.family + "</span>");
+    if (d.activation) tags.push('<span class="tag">' + d.activation + "</span>");
+    if (d.params != null) tags.push('<span class="tag">' + num(d.params) + " params</span>");
+    els.design.innerHTML =
+      "<div><strong>" + name + "</strong>" + tags.join("") + "</div>" +
+      (d.spatial ? '<div class="spatial"><span class="k">spatial</span> ' + d.spatial + "</div>" : "") +
+      (d.summary ? '<div class="summary">' + d.summary + "</div>" : "");
+    els.design.style.display = "block";
+  }
+
+  function renderModel(rec, runsList, selected) {
+    populateRunSelector(runsList, selected);
+    renderDesign(rec);
+
+    if (!rec) {
+      els.status.innerHTML = '<span class="badge none">no run</span>';
+      els.barfill.style.width = "0%";
+      charts.model.data.labels = [];
+      charts.model.data.datasets.forEach(function (d) { d.data = []; });
+      charts.model.update();
+      return;
+    }
+
+    var status = rec.status || "?";
+    var cfg = rec.config || {};
+    var rows = trainRows(rec);
+    var last = rows.length ? rows[rows.length - 1] : null;
+    var lastStep = last ? last.step : 0;
+    var total = rec.steps_total || 0;
+    var pct = total ? Math.min(100, (lastStep / total) * 100) : 0;
+    var elapsed = last ? last.elapsed : null;
+    var datapoints = last ? last.datapoints : null;
+    var badgeCls = status === "running" ? "running" : (status === "done" ? "done" : "none");
+
+    var parts = [];
+    parts.push(span("run", "<strong>" + (rec.run_id || "-") + "</strong>"));
+    parts.push('<span class="badge ' + badgeCls + '">' + status + "</span>");
+    parts.push(span("step", lastStep + " / " + total));
+    if (datapoints != null) parts.push(span("datapoints", num(datapoints)));
+    parts.push(span("elapsed", fmtTime(elapsed)));
+    if (rec.num_samples != null) parts.push(span("samples", num(rec.num_samples)));
+    if (rec.num_val != null) parts.push(span("val", num(rec.num_val)));
+    if (rec.num_params != null) parts.push(span("params", num(rec.num_params)));
+    if (cfg.variant != null) parts.push(span("variant", cfg.variant));
+    if (cfg.lr != null) parts.push(span("lr", cfg.lr));
+    if (cfg.batch_size != null) parts.push(span("batch", cfg.batch_size));
+    els.status.innerHTML = parts.join("");
+    els.barfill.style.width = pct + "%";
+
+    charts.model.data.labels = rows.map(function (s) { return s.step; });
+    LOSS_KEYS.forEach(function (k, i) {
+      charts.model.data.datasets[i].data = rows.map(function (s) {
+        return s[k] != null ? s[k] : null;
+      });
+    });
+    charts.model.update();
+  }
+
+  // ---- views 2 & 3: multi-run --------------------------------------------
+
+  // rowsFn returns the rows for a record; xField is the x value (e.g.
+  // "datapoints" for training, "time" for validation). y is always total loss.
+  function renderMultiRun(chart, allMap, runsOrder, rowsFn, xField) {
+    xField = xField || "datapoints";
+    var datasets = [];
+    var anyData = false;
+    runsOrder.forEach(function (id, idx) {
+      var rec = allMap[id];
+      if (!rec) return;
+      var rows = rowsFn(rec);
+      if (!rows.length) return;
+      var pts = rows
+        .filter(function (r) { return r[xField] != null && r.total != null; })
+        .map(function (r) { return { x: r[xField], y: r.total }; });
+      if (!pts.length) return;
+      anyData = true;
+      var color = RUN_PALETTE[idx % RUN_PALETTE.length];
+      var ds = baseLineDataset(runLabel(rec, id), color);
+      ds.data = pts;
+      datasets.push(ds);
+    });
+    chart.data.datasets = datasets;
+    chart.update();
+    return anyData;
+  }
+
+  // Validation view: every experiment's single validation point as a scatter,
+  // with the FRONTIER (running-best loss over time) drawn on top as an
+  // emphasised descending staircase. No legend; hover a point for its run id.
+  function renderVal(allMap, runsOrder) {
+    var pts = [];
+    runsOrder.forEach(function (id) {
+      var rec = allMap[id];
+      var vr = valRows(rec);
+      if (!vr.length) return;
+      var last = vr[vr.length - 1];
+      if (last.time != null && last.total != null) {
+        pts.push({ x: last.time, y: last.total, id: runLabel(rec, id) });
+      }
+    });
+    pts.sort(function (a, b) { return a.x - b.x; });
+
+    if (!pts.length) {
+      els.valNote.style.display = "block";
+      els.valNote.textContent = "No validation data yet.";
+      charts.val.data.datasets = [];
+      charts.val.update();
+      return;
+    }
+    els.valNote.style.display = "none";
+
+    var frontier = [];
+    var best = Infinity;
+    pts.forEach(function (p) { if (p.y < best) { best = p.y; frontier.push(p); } });
+
+    // Non-frontier experiments only (grey scatter, no connecting line) — frontier
+    // points are drawn by the frontier dataset, so excluding them here avoids a
+    // duplicate marker (and duplicate tooltip entry) at the same spot.
+    var frontierSet = new Set(frontier);
+    var others = pts.filter(function (p) { return !frontierSet.has(p); });
+    var scatter = {
+      label: "experiment",
+      data: others,
+      showLine: false,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      borderColor: "#94a3b8",
+      backgroundColor: "#94a3b8",
+    };
+    // Frontier staircase (emphasised, on top).
+    var front = baseLineDataset("frontier", COLORS.total);
+    front.data = frontier;
+    front.pointRadius = 4;
+    front.stepped = "after";
+    front.tension = 0;
+
+    charts.val.data.datasets = [scatter, front];
+    charts.val.update();
+  }
+
+  // ---- view 3: Table (leaderboard) ----------------------------------------
+
+  function renderTable(allMap, runsOrder) {
+    var rows = (runsOrder || []).map(function (id) {
+      var rec = allMap[id] || {};
+      var vr = valRows(rec);
+      var v = vr.length ? vr[vr.length - 1] : null;
+      var doc = VARIANT_DOCS[(rec.config && rec.config.variant) || variantOf(id)] || {};
+      return {
+        id: id,
+        family: doc.family || (rec.config && rec.config.variant) || "",
+        activation: doc.activation || "",
+        params: rec.num_params != null ? rec.num_params : doc.params,
+        status: rec.status || "?",
+        val: v ? v.total : null,
+        step: rec.last_step != null ? rec.last_step : trainRows(rec).length,
+        total: rec.steps_total || 0,
+      };
+    });
+    // Best (lowest) validation loss first; runs without a val row sink to the end.
+    rows.sort(function (a, b) {
+      var an = a.val == null, bn = b.val == null;
+      if (an !== bn) return an ? 1 : -1;
+      return an ? 0 : a.val - b.val;
+    });
+
+    if (!rows.length) {
+      els.tableNote.style.display = "block";
+      els.tableNote.textContent = "No experiments yet.";
+      els.tableWrap.innerHTML = "";
+      return;
+    }
+    els.tableNote.style.display = "none";
+    var best = rows[0].val;
+    var html =
+      '<table class="lb"><thead><tr>' +
+      '<th class="num">#</th><th>run</th><th>family</th><th>act</th>' +
+      '<th class="num">params</th><th>status</th><th class="num">val total</th>' +
+      "</tr></thead><tbody>";
+    rows.forEach(function (r, i) {
+      var isBest = r.val != null && r.val === best;
+      var badgeCls = r.status === "running" ? "running" : (r.status === "done" ? "done" : "none");
+      var valTxt = r.val != null ? Number(r.val).toFixed(3)
+        : (r.status === "running" ? r.step + "/" + r.total : "-");
+      html +=
+        '<tr class="' + (isBest ? "best" : "") + '">' +
+        '<td class="num">' + (i + 1) + "</td>" +
+        '<td><a class="run" data-run="' + r.id + '">' + r.id + "</a></td>" +
+        "<td>" + (r.family || "-") + "</td>" +
+        "<td>" + (r.activation || "-") + "</td>" +
+        '<td class="num">' + num(r.params) + "</td>" +
+        '<td><span class="badge ' + badgeCls + '">' + r.status + "</span></td>" +
+        '<td class="num">' + valTxt + "</td>" +
+        "</tr>";
+    });
+    els.tableWrap.innerHTML = html + "</tbody></table>";
+  }
+
+  function refreshTable(base) {
+    fetchAll()
+      .then(function (res) {
+        showErr("");
+        populateRunSelector(res.runs, null);
+        renderTable(res.allMap, res.runs);
+        updateStatuses(res.runs.map(function (id) {
+          return res.allMap[id] ? res.allMap[id].status : null;
+        }));
+        schedule();
+      })
+      .catch(function (e) {
+        showErr("fetch failed: " + e.message + " (retrying)");
+        schedule();
+      });
+  }
+
+  // ---- normalization ------------------------------------------------------
+
+  // Single-run payload -> {rec, runs, run}.
+  function normalizeSingle(obj) {
+    if (!obj || typeof obj !== "object") return { rec: null, runs: [], run: null };
+    if (Object.prototype.hasOwnProperty.call(obj, "data") || Object.prototype.hasOwnProperty.call(obj, "runs")) {
+      return { rec: obj.data || null, runs: obj.runs || [], run: obj.run || obj.latest || null };
+    }
+    // Bare record.
+    if (Object.prototype.hasOwnProperty.call(obj, "train") ||
+        Object.prototype.hasOwnProperty.call(obj, "steps") ||
+        Object.prototype.hasOwnProperty.call(obj, "run_id")) {
+      return { rec: obj, runs: obj.run_id ? [obj.run_id] : [], run: obj.run_id || null };
+    }
+    return { rec: null, runs: [], run: null };
+  }
+
+  // all payload -> {allMap, runs}. Accepts {all: {...}} or a bare {id: rec} map.
+  function normalizeAll(obj) {
+    if (!obj || typeof obj !== "object") return { allMap: {}, runs: [] };
+    if (obj.all && typeof obj.all === "object") {
+      var runs = (obj.runs && obj.runs.length) ? obj.runs : Object.keys(obj.all);
+      return { allMap: obj.all, runs: runs };
+    }
+    // A demo object that is itself a bare {id: rec} map (no `all` wrapper, no `data`).
+    if (!Object.prototype.hasOwnProperty.call(obj, "data") &&
+        !Object.prototype.hasOwnProperty.call(obj, "runs") &&
+        !Object.prototype.hasOwnProperty.call(obj, "run_id") &&
+        !Object.prototype.hasOwnProperty.call(obj, "train")) {
+      var ids = Object.keys(obj).filter(function (k) {
+        return obj[k] && typeof obj[k] === "object" && (obj[k].run_id || obj[k].train || obj[k].status);
+      });
+      if (ids.length) {
+        var map = {};
+        ids.forEach(function (k) { map[k] = obj[k]; });
+        return { allMap: map, runs: ids };
+      }
+    }
+    return { allMap: {}, runs: obj.runs || [] };
+  }
+
+  // ---- fetching -----------------------------------------------------------
+
+  function apiBase() {
+    return (els.api.value || "").trim().replace(/\/+$/, "");
+  }
+
+  function fetchJson(url) {
+    return fetch(url, { cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  // Returns a promise resolving to {allMap, runs}. Tries ?run=all; if the
+  // endpoint omits the `all` object (current deployment), fetches each run.
+  function fetchAll() {
+    var base = apiBase();
+    return fetchJson(base + "?run=all").then(function (j) {
+      var n = normalizeAll(j);
+      if (Object.keys(n.allMap).length) return n;
+      // Fall back: fetch each run id individually and assemble the map.
+      var runs = j && j.runs ? j.runs : [];
+      if (!runs.length) return { allMap: {}, runs: [] };
+      return Promise.all(runs.map(function (id) {
+        return fetchJson(base + "?run=" + encodeURIComponent(id))
+          .then(function (rj) { return { id: id, rec: (rj && rj.data) || null }; })
+          .catch(function () { return { id: id, rec: null }; });
+      })).then(function (results) {
+        var map = {};
+        results.forEach(function (res) { if (res.rec) map[res.id] = res.rec; });
+        return { allMap: map, runs: runs };
+      });
+    });
+  }
+
+  // ---- poll cadence -------------------------------------------------------
+
+  function updateStatuses(statuses) {
+    lastStatuses = statuses.filter(function (s) { return s != null; });
+  }
+  function anyRunning() {
+    return lastStatuses.indexOf("running") !== -1;
+  }
+
+  function schedule() {
+    if (pollTimer) clearTimeout(pollTimer);
+    if (!els.auto.checked) return;
+    var delay = anyRunning() ? POLL_RUNNING : POLL_DONE;
+    pollTimer = setTimeout(refresh, delay);
+  }
+
+  // ---- top-level refresh per current view --------------------------------
+
+  function refresh() {
+    if (isDemo()) {
+      renderFromDemo(window.__DEMO_METRICS__);
+      schedule();
+      return;
+    }
+    var base = apiBase();
+    if (!base) {
+      showErr("Enter an endpoint URL.");
+      return;
+    }
+    if (currentView === "model") {
+      refreshModel(base);
+    } else if (currentView === "table") {
+      refreshTable(base);
+    } else {
+      refreshMulti(base);
+    }
+  }
+
+  function refreshModel(base) {
+    // Pick a run by real id: the current selection, else the ?model= deep link,
+    // else the newest. No magic "latest" run; a sweep's runs all appear listed.
+    fetchAll()
+      .then(function (res) {
+        showErr("");
+        var sel = els.run.value;
+        var id = (sel && res.allMap[sel]) ? sel
+          : (resolveRunFromParam(res.runs) || newestRun(res.runs));
+        populateRunSelector(res.runs, id);
+        setModelParam(id);
+        if (!id) {
+          renderModel(null, res.runs, id);
+          updateStatuses([]);
+          schedule();
+          return;
+        }
+        // ?run=all gives summaries (no per-step `train`); fetch the full record
+        // for just the selected run so the Model chart has its loss curves.
+        fetchJson(base + "?run=" + encodeURIComponent(id))
+          .then(function (rj) {
+            var rec = (rj && rj.data) || res.allMap[id];
+            renderModel(rec, res.runs, id);
+            updateStatuses(rec ? [rec.status] : []);
+            schedule();
+          })
+          .catch(function () {
+            renderModel(res.allMap[id] || null, res.runs, id);
+            updateStatuses(res.allMap[id] ? [res.allMap[id].status] : []);
+            schedule();
+          });
+      })
+      .catch(function (e) {
+        showErr("fetch failed: " + e.message + " (retrying)");
+        schedule();
+      });
+  }
+
+  function refreshMulti(base) {
+    fetchAll()
+      .then(function (res) {
+        showErr("");
+        // Keep the run selector fresh too.
+        populateRunSelector(res.runs, null);
+        renderVal(res.allMap, res.runs);
+        updateStatuses(res.runs.map(function (id) {
+          return res.allMap[id] ? res.allMap[id].status : null;
+        }));
+        schedule();
+      })
+      .catch(function (e) {
+        showErr("fetch failed: " + e.message + " (retrying)");
+        schedule();
+      });
+  }
+
+  // ---- demo rendering -----------------------------------------------------
+
+  // Render every view from an in-memory ?run=all shaped object (or single).
+  function renderFromDemo(obj) {
+    showErr("");
+    var na = normalizeAll(obj);
+    if (Object.keys(na.allMap).length) {
+      var runs = na.runs;
+      // Model view: selected run, else ?model= deep link, else newest.
+      var sel = els.run.value;
+      var modelId = (sel && na.allMap[sel]) ? sel : (resolveRunFromParam(runs) || newestRun(runs));
+      populateRunSelector(runs, modelId);
+      renderModel(na.allMap[modelId] || null, runs, modelId);
+      renderVal(na.allMap, runs);
+      renderTable(na.allMap, runs);
+      updateStatuses(runs.map(function (id) { return na.allMap[id] ? na.allMap[id].status : null; }));
+      return;
+    }
+    // Single-run demo.
+    var ns = normalizeSingle(obj);
+    renderModel(ns.rec, ns.runs, ns.run);
+    if (ns.rec) {
+      var m = {}; m[ns.rec.run_id] = ns.rec;
+      renderVal(m, [ns.rec.run_id]);
+      renderTable(m, [ns.rec.run_id]);
+    }
+    updateStatuses(ns.rec ? [ns.rec.status] : []);
+  }
+
+  // ---- tabs ---------------------------------------------------------------
+
+  function switchView(view) {
+    currentView = view;
+    Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (t) {
+      t.classList.toggle("active", t.getAttribute("data-view") === view);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".view"), function (v) {
+      v.classList.toggle("active", v.id === "view-" + view);
+    });
+    // Resize charts that were hidden (Chart.js needs a visible canvas).
+    if (charts.model) charts.model.resize();
+    if (charts.val) charts.val.resize();
+    // Reflect the active tab in the URL (deep-linkable, back/forward friendly).
+    try {
+      var u = new URL(location.href);
+      u.searchParams.set("view", view);
+      history.replaceState(null, "", u);
+    } catch (e) { /* file:// may reject replaceState in some browsers */ }
+    refresh();
+  }
+
+  // ---- init / wiring ------------------------------------------------------
+
+  function initApi() {
+    var url = qp("api") || localStorage.getItem(LS_KEY) || DEFAULT_API;
+    els.api.value = url;
+  }
+
+  els.api.addEventListener("change", function () {
+    localStorage.setItem(LS_KEY, els.api.value.trim());
+    refresh();
+  });
+  els.run.addEventListener("change", function () {
+    setModelParam(els.run.value);   // deep-link the selected run via ?model=
+    refresh();
+  });
+  els.refresh.addEventListener("click", refresh);
+  els.auto.addEventListener("change", function () {
+    if (els.auto.checked) refresh();
+    else if (pollTimer) clearTimeout(pollTimer);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (t) {
+    t.addEventListener("click", function () { switchView(t.getAttribute("data-view")); });
+  });
+  // Click a run in the Table view -> open it in the Model view.
+  if (els.tableWrap) {
+    els.tableWrap.addEventListener("click", function (e) {
+      var a = e.target.closest ? e.target.closest("a.run") : null;
+      if (!a) return;
+      e.preventDefault();
+      var id = a.getAttribute("data-run");
+      if (!id) return;
+      els.run.value = id;
+      setModelParam(id);
+      switchView("model");
+    });
+  }
+
+  initApi();
+  makeModelChart();
+  charts.val = makeMultiRunChart("chartVal", { xTitle: "validation time", timeAxis: true, legend: false, pointId: true });
+
+  // Load variant design docs (sync from the script global; refresh over http),
+  // then re-render so the design panel reflects the latest variants.jsonl.
+  seedVariantDocs(window.__VARIANTS__);
+  loadVariantDocs().then(function () { if (currentView === "model" && !isDemo()) refresh(); });
+
+  // Restore the active tab from ?view= (deep link); default to Model.
+  var startView = qp("view");
+  if (["frontier", "table", "model"].indexOf(startView) === -1) startView = "frontier";
+
+  // Demo via ?demo=1 loads the bundled sample file (?run=all shape).
+  if (qp("demo") === "1" && !window.__DEMO_METRICS__) {
+    fetchJson("sample_metrics.json")
+      .then(function (j) { window.__DEMO_METRICS__ = j; switchView(startView); })
+      .catch(function (e) { showErr("demo load failed: " + e.message); });
+  } else {
+    switchView(startView);
+  }
+
+  // Test/automation hooks.
+  window.__switchView = switchView;
+  window.__renderMetrics = renderFromDemo;
+  window.__metricsCharts = function () { return charts; };
+})();
+</script>
+</body>
+</html>
