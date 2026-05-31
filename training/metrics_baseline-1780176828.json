@@ -1,0 +1,165 @@
+{
+ "run_id": "baseline-1780176828",
+ "status": "running",
+ "config": {
+  "variant": "baseline",
+  "hidden": 64,
+  "hidden_layers": 1,
+  "epochs": 2,
+  "batch_size": 64,
+  "lr": 0.001,
+  "games": [
+   "lp85",
+   "vc33"
+  ],
+  "only_won": true,
+  "max_input_level": null
+ },
+ "num_samples": 4470,
+ "num_params": 27110,
+ "steps_total": 140,
+ "started_at": 1780176845.3743162,
+ "updated_at": 1780176956.7021222,
+ "steps": [
+  {
+   "step": 10,
+   "epoch": 1,
+   "elapsed": 20.0,
+   "lr": 0.001,
+   "total": 10.50281,
+   "action": 0.0,
+   "color": 2.38696,
+   "coord": 8.11584
+  },
+  {
+   "step": 20,
+   "epoch": 1,
+   "elapsed": 25.4,
+   "lr": 0.001,
+   "total": 9.85043,
+   "action": 0.0,
+   "color": 2.00307,
+   "coord": 7.84736
+  },
+  {
+   "step": 30,
+   "epoch": 1,
+   "elapsed": 31.8,
+   "lr": 0.001,
+   "total": 8.86301,
+   "action": 0.0,
+   "color": 1.56709,
+   "coord": 7.29592
+  },
+  {
+   "step": 40,
+   "epoch": 1,
+   "elapsed": 37.2,
+   "lr": 0.001,
+   "total": 8.12793,
+   "action": 0.0,
+   "color": 1.4293,
+   "coord": 6.69863
+  },
+  {
+   "step": 50,
+   "epoch": 1,
+   "elapsed": 43.1,
+   "lr": 0.001,
+   "total": 7.15028,
+   "action": 0.0,
+   "color": 1.16762,
+   "coord": 5.98266
+  },
+  {
+   "step": 60,
+   "epoch": 1,
+   "elapsed": 49.1,
+   "lr": 0.001,
+   "total": 5.75385,
+   "action": 0.0,
+   "color": 0.91868,
+   "coord": 4.83517
+  },
+  {
+   "step": 70,
+   "epoch": 1,
+   "elapsed": 54.7,
+   "lr": 0.001,
+   "total": 4.83937,
+   "action": 0.0,
+   "color": 0.70221,
+   "coord": 4.13716
+  },
+  {
+   "step": 80,
+   "epoch": 2,
+   "elapsed": 73.9,
+   "lr": 0.001,
+   "total": 5.10934,
+   "action": 0.0,
+   "color": 0.98688,
+   "coord": 4.12247
+  },
+  {
+   "step": 90,
+   "epoch": 2,
+   "elapsed": 80.1,
+   "lr": 0.001,
+   "total": 4.59788,
+   "action": 0.0,
+   "color": 0.63286,
+   "coord": 3.96502
+  },
+  {
+   "step": 100,
+   "epoch": 2,
+   "elapsed": 86.4,
+   "lr": 0.001,
+   "total": 4.2212,
+   "action": 0.0,
+   "color": 0.6001,
+   "coord": 3.6211
+  },
+  {
+   "step": 110,
+   "epoch": 2,
+   "elapsed": 92.8,
+   "lr": 0.001,
+   "total": 3.89801,
+   "action": 0.0,
+   "color": 0.62043,
+   "coord": 3.27758
+  },
+  {
+   "step": 120,
+   "epoch": 2,
+   "elapsed": 99.0,
+   "lr": 0.001,
+   "total": 3.95446,
+   "action": 0.0,
+   "color": 0.5416,
+   "coord": 3.41286
+  },
+  {
+   "step": 130,
+   "epoch": 2,
+   "elapsed": 105.2,
+   "lr": 0.001,
+   "total": 3.37931,
+   "action": 0.0,
+   "color": 0.59986,
+   "coord": 2.77945
+  },
+  {
+   "step": 140,
+   "epoch": 2,
+   "elapsed": 111.1,
+   "lr": 0.001,
+   "total": 3.31249,
+   "action": 0.0,
+   "color": 0.5331,
+   "coord": 2.77939
+  }
+ ]
+}
