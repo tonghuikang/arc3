@@ -53,7 +53,6 @@
     cursor: pointer;
   }
   button:hover { border-color: #bbb; }
-  .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); }
   .tabs {
     display: flex;
     gap: 4px;
@@ -155,8 +154,6 @@
 
 <div class="controls">
   <span class="muted">Reading local metrics from <code>metrics_export/</code>.</span>
-  <button id="refresh" type="button">Refresh</button>
-  <span class="toggle"><input type="checkbox" id="auto" /><label for="auto">auto-poll</label></span>
 </div>
 
 <div class="err" id="err"></div>
@@ -207,8 +204,6 @@
 
   var els = {
     run: document.getElementById("run"),
-    refresh: document.getElementById("refresh"),
-    auto: document.getElementById("auto"),
     err: document.getElementById("err"),
     status: document.getElementById("status"),
     barfill: document.getElementById("barfill"),
@@ -734,9 +729,9 @@
 
   function schedule() {
     if (pollTimer) clearTimeout(pollTimer);
-    if (!els.auto.checked) return;
-    // The local snapshot is static once every run is done — only keep polling
-    // while something is still running (e.g. a live, locally-regenerated file).
+    // Auto-poll is always on: the local snapshot is static once every run is
+    // done, so only keep polling while something is still running (e.g. a live,
+    // locally-regenerated file).
     if (!anyRunning()) return;
     pollTimer = setTimeout(refresh, POLL_RUNNING);
   }
@@ -870,11 +865,6 @@
   els.run.addEventListener("change", function () {
     setModelParam(els.run.value);   // deep-link the selected run via ?model=
     refresh();
-  });
-  els.refresh.addEventListener("click", refresh);
-  els.auto.addEventListener("change", function () {
-    if (els.auto.checked) refresh();
-    else if (pollTimer) clearTimeout(pollTimer);
   });
   Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (t) {
     t.addEventListener("click", function () { switchView(t.getAttribute("data-view")); });
