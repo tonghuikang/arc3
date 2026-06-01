@@ -33,7 +33,13 @@ def summarize(rec: dict) -> dict:
         "num_params": rec.get("num_params"),
         "steps_total": rec.get("steps_total"),
         "last_step": (rows[-1].get("step") if rows else 0),
-        "config": {"variant": (rec.get("config") or {}).get("variant")},
+        # Wall-clock training time (seconds) = elapsed at the final logged step.
+        "train_time": (rows[-1].get("elapsed") if rows else (rec.get("final") or {}).get("elapsed")),
+        "config": {
+            "variant": (rec.get("config") or {}).get("variant"),
+            "batch_size": (rec.get("config") or {}).get("batch_size"),
+            "lr": (rec.get("config") or {}).get("lr"),
+        },
         # Frontier (scatter + frontier staircase) and Table only need the
         # final validation point: x = wall-clock time, y = total loss.
         "val": (

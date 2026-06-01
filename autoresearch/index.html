@@ -174,6 +174,7 @@
   <div class="design" id="design" style="display:none"></div>
   <div class="bar"><div id="barfill"></div></div>
   <div class="chartwrap"><canvas id="chartModel"></canvas></div>
+  <p class="caption">Per-step loss, smoothed with a 16-step centered moving average.</p>
 </section>
 
 <!-- View 2: Validation (frontier) -->
@@ -244,6 +245,11 @@
     return runId ? String(runId).replace(/-\d+$/, "") : null;
   }
 
+  // Model-view loss curves are logged every step and are visibly noisy, so they
+  // are drawn through a centered moving average of this many points. Set to 1
+  // (or 0) to disable smoothing and show the raw per-step values.
+  var SMOOTH_WINDOW = 16;
+
   var LOSS_KEYS = ["total", "action", "color", "coord"];
   var COLORS = { total: "#2563eb", action: "#16a34a", color: "#d97706", coord: "#db2777" };
   // Distinct palette for comparing runs.
@@ -285,6 +291,29 @@
       return rec.run_id || id;
     }
     return (rec && rec.run_id) || id || "?";
+  }
+
+  // Centered moving average over `window` points; nulls (missing values) are
+  // skipped in each window rather than treated as zero. Returns a new array the
+  // same length as `values`; with window <= 1 the values are returned unchanged.
+  // For an even window the extra point goes to the trailing side (e.g. window 16
+  // averages the 7 points before, the point itself, and the 8 points after).
+  function smoothSeries(values, window) {
+    if (!window || window <= 1) return values.slice();
+    var before = Math.floor((window - 1) / 2);
+    var after = window - 1 - before;
+    var out = new Array(values.length);
+    for (var i = 0; i < values.length; i++) {
+      var sum = 0, n = 0;
+      for (var j = i - before; j <= i + after; j++) {
+        if (j < 0 || j >= values.length) continue;
+        var v = values[j];
+        if (v == null || isNaN(v)) continue;
+        sum += v; n++;
+      }
+      out[i] = n ? sum / n : null;
+    }
+    return out;
   }
 
   // ---- chart construction -------------------------------------------------
@@ -444,14 +473,16 @@
     if (!els.design) return;
     var name = (rec && rec.config && rec.config.variant) || variantOf(rec && rec.run_id);
     var d = name ? VARIANT_DOCS[name] : null;
-    if (!d) { els.design.style.display = "none"; els.design.innerHTML = ""; return; }
-    var tags = [];
-    if (d.family) tags.push('<span class="tag">' + d.family + "</span>");
-    if (d.activation) tags.push('<span class="tag">' + d.activation + "</span>");
-    if (d.params != null) tags.push('<span class="tag">' + num(d.params) + " params</span>");
+    // The status row already shows the variant name and param count, so the
+    // design panel only carries what's NOT already on screen: the architecture
+    // summary, plus a real spatial note. The "(see base family)" placeholder is
+    // dropped as uninformative.
+    var spatial = (d && d.spatial && d.spatial.charAt(0) !== "(") ? d.spatial : "";
+    if (!d || (!d.summary && !spatial)) {
+      els.design.style.display = "none"; els.design.innerHTML = ""; return;
+    }
     els.design.innerHTML =
-      "<div><strong>" + name + "</strong>" + tags.join("") + "</div>" +
-      (d.spatial ? '<div class="spatial"><span class="k">spatial</span> ' + d.spatial + "</div>" : "") +
+      (spatial ? '<div class="spatial"><span class="k">spatial</span> ' + spatial + "</div>" : "") +
       (d.summary ? '<div class="summary">' + d.summary + "</div>" : "");
     els.design.style.display = "block";
   }
@@ -487,7 +518,19 @@
     if (datapoints != null) parts.push(span("datapoints", num(datapoints)));
     parts.push(span("elapsed", fmtTime(elapsed)));
     if (rec.num_samples != null) parts.push(span("samples", num(rec.num_samples)));
-    if (rec.num_val != null) parts.push(span("val", num(rec.num_val)));
+    if (rec.num_val != null) parts.push(span("val samples", num(rec.num_val)));
+    // Final validation loss (held-out): total, with the per-head breakdown that
+    // mirrors the training curves. Prefer the last val row, fall back to final_val.
+    var vr = valRows(rec);
+    var fv = (vr.length ? vr[vr.length - 1] : null) || rec.final_val || null;
+    if (fv && fv.total != null) {
+      var brk = LOSS_KEYS
+        .filter(function (k) { return k !== "total" && fv[k] != null; })
+        .map(function (k) { return k + " " + Number(fv[k]).toFixed(3); })
+        .join(" · ");
+      parts.push(span("val loss", "<strong>" + Number(fv.total).toFixed(3) + "</strong>" +
+        (brk ? ' <span class="muted">(' + brk + ")</span>" : "")));
+    }
     if (rec.num_params != null) parts.push(span("params", num(rec.num_params)));
     if (cfg.variant != null) parts.push(span("variant", cfg.variant));
     if (cfg.lr != null) parts.push(span("lr", cfg.lr));
@@ -497,9 +540,8 @@
 
     charts.model.data.labels = rows.map(function (s) { return s.step; });
     LOSS_KEYS.forEach(function (k, i) {
-      charts.model.data.datasets[i].data = rows.map(function (s) {
-        return s[k] != null ? s[k] : null;
-      });
+      var raw = rows.map(function (s) { return s[k] != null ? s[k] : null; });
+      charts.model.data.datasets[i].data = smoothSeries(raw, SMOOTH_WINDOW);
     });
     charts.model.update();
   }
@@ -598,7 +640,10 @@
         id: id,
         family: doc.family || (rec.config && rec.config.variant) || "",
         activation: doc.activation || "",
+        batch: (rec.config && rec.config.batch_size != null) ? rec.config.batch_size : null,
+        lr: (rec.config && rec.config.lr != null) ? rec.config.lr : null,
         params: rec.num_params != null ? rec.num_params : doc.params,
+        trainTime: rec.train_time != null ? rec.train_time : null,
         status: rec.status || "?",
         val: v ? v.total : null,
         step: rec.last_step != null ? rec.last_step : trainRows(rec).length,
@@ -623,7 +668,8 @@
     var html =
       '<table class="lb"><thead><tr>' +
       '<th class="num">#</th><th>run</th><th>family</th><th>act</th>' +
-      '<th class="num">params</th><th>status</th><th class="num">val total</th>' +
+      '<th class="num">batch</th><th class="num">lr</th>' +
+      '<th class="num">params</th><th class="num">train time</th><th>status</th><th class="num">val total</th>' +
       "</tr></thead><tbody>";
     rows.forEach(function (r, i) {
       var isBest = r.val != null && r.val === best;
@@ -636,7 +682,10 @@
         '<td><a class="run" data-run="' + r.id + '">' + r.id + "</a></td>" +
         "<td>" + (r.family || "-") + "</td>" +
         "<td>" + (r.activation || "-") + "</td>" +
+        '<td class="num">' + (r.batch != null ? r.batch : "-") + "</td>" +
+        '<td class="num">' + (r.lr != null ? r.lr : "-") + "</td>" +
         '<td class="num">' + num(r.params) + "</td>" +
+        '<td class="num">' + (r.trainTime != null ? fmtTime(r.trainTime) : "-") + "</td>" +
         '<td><span class="badge ' + badgeCls + '">' + r.status + "</span></td>" +
         '<td class="num">' + valTxt + "</td>" +
         "</tr>";
