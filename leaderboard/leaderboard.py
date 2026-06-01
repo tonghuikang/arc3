@@ -25,6 +25,12 @@ image = modal.Image.debian_slim(python_version="3.11").pip_install("kaggle")
 positions_dict = modal.Dict.from_name("arc3-leaderboard-positions", create_if_missing=True)
 history_dict = modal.Dict.from_name("arc3-leaderboard-history", create_if_missing=True)
 
+# The full per-team history is stored as a single blob under this one key. Modal Dict
+# access is a network round-trip per key, so the previous one-key-per-team layout cost
+# ~989 reads in the loop plus a ~989-key dict(history_dict) materialization every minute.
+# A single blob collapses that to one read + one write per run.
+HISTORY_KEY = "__all_history__"
+
 
 def parse_leaderboard_csv(csv_content: str) -> list[dict]:
     """Parse kaggle leaderboard CSV output into structured data."""
@@ -59,7 +65,6 @@ def parse_leaderboard_csv(csv_content: str) -> list[dict]:
     timeout=20 * 60,
     max_containers=1,
 )
-@modal.concurrent(max_inputs=16)
 def check_leaderboard():
     import subprocess
     from pathlib import Path
@@ -73,6 +78,9 @@ def check_leaderboard():
         kaggle_json.write_text(kaggle_token)
         kaggle_json.chmod(0o600)
 
+    import time
+
+    _t0 = time.perf_counter()
     now = datetime.utcnow()
     print(f"\n{'=' * 60}")
     print(f"Leaderboard check at {now.isoformat()} UTC")
@@ -121,9 +129,21 @@ def check_leaderboard():
     csv_content = csv_file.read_text()
     entries = parse_leaderboard_csv(csv_content)
 
+    _t_parsed = time.perf_counter()
+
+    # Load the entire history in ONE read instead of one round-trip per team.
+    # First run after the layout switch: migrate the legacy per-team keys (one slow
+    # dict() materialization, once); afterwards it's a single blob get.
+    all_history = history_dict.get(HISTORY_KEY)
+    migrated = all_history is None
+    if migrated:
+        all_history = {k: v for k, v in dict(history_dict).items() if k != HISTORY_KEY}
+    _t_loaded = time.perf_counter()
+
     # Build leaderboard_positions: [team_id, team_name, position, submission_count, score]
     leaderboard_positions = []
     new_submissions = 0
+    updated_scores = 0
 
     for position, entry in enumerate(entries, start=1):
         team_id = entry["team_id"]
@@ -152,19 +172,19 @@ def check_leaderboard():
             delta = now - sub_time
             minutes_taken = int(delta.total_seconds() / 60)
 
-            # Get existing history for this team
-            existing_entries = history_dict.get(team_id, {})
+            # Get existing history for this team (in-memory; no network round-trip)
+            existing_entries = all_history.get(team_id, {})
 
-            # Check if this submission_time is new
-            is_new = True
+            # Find an existing entry for this submission time, if any.
+            matched_key = None
             for existing_date_key, existing_data in existing_entries.items():
                 if existing_data.get("submission_time") == submission_time_formatted:
-                    is_new = False
+                    matched_key = existing_date_key
                     break
 
-            if is_new:
-                # Add new entry under the date key
-                # If there's already an entry for this date, use a unique key
+            if matched_key is None:
+                # Genuinely new submission time -> append a new entry.
+                # If there's already an entry for this date, use a unique key.
                 final_date_key = date_key
                 if date_key in existing_entries:
                     # Append a counter to make it unique
@@ -180,21 +200,40 @@ def check_leaderboard():
                     "minutes_taken": minutes_taken,
                     "submission_time": submission_time_formatted,
                 }
-                history_dict[team_id] = existing_entries
+                all_history[team_id] = existing_entries
                 new_submissions += 1
+            elif existing_entries[matched_key].get("score") != score:
+                # Same submission, but Kaggle's (best) score changed since we first
+                # recorded it -- scores lag/recompute on Kaggle, so update in place
+                # rather than dropping the improvement (the old code never did this).
+                existing_entries[matched_key]["score"] = score
+                all_history[team_id] = existing_entries
+                updated_scores += 1
 
-    # Store positions
-    positions_dict["positions"] = leaderboard_positions
+    _t_looped = time.perf_counter()
 
-    # Cache the full API response for fast retrieval
-    all_history = dict(history_dict)
+    # Persist history as one blob (not per-team), but only when it actually changed
+    # (or on the first-run migration). get_history serves cached_response, which is
+    # rewritten every run since positions shift, and embeds the current history.
+    if migrated or new_submissions or updated_scores:
+        history_dict[HISTORY_KEY] = all_history
     positions_dict["cached_response"] = {
         "positions": leaderboard_positions,
         "history": all_history,
     }
 
+    _t_written = time.perf_counter()
+    print(
+        f"TIMING: download+parse={_t_parsed - _t0:.2f}s | "
+        f"load_history={_t_loaded - _t_parsed:.2f}s | "
+        f"loop(in-memory)={_t_looped - _t_loaded:.2f}s | "
+        f"write={_t_written - _t_looped:.2f}s | "
+        f"total={_t_written - _t0:.2f}s"
+    )
+
     print(f"Stored {len(leaderboard_positions)} teams in positions")
     print(f"New submissions recorded: {new_submissions}")
+    print(f"Scores updated (late rescoring): {updated_scores}")
 
     # Print top 10 for quick reference
     print("\nTop 10:")
