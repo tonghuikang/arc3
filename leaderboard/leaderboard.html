@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ARC-AGI-3 Leaderboard Monitor</title>
+    <title>ARC Prize 2026 Leaderboard Monitor</title>
     <style>
         * {
             box-sizing: border-box;
@@ -18,8 +18,32 @@
         h1 {
             text-align: center;
             color: #00d9ff;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
             font-size: 1.5rem;
+        }
+        .comp-switcher {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .comp-switcher a {
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-decoration: none;
+            color: #9fb3c8;
+            background: #16213e;
+            border: 1px solid #2a3a5e;
+        }
+        .comp-switcher a:hover {
+            color: #fff;
+        }
+        .comp-switcher a.active {
+            color: #0d1b2a;
+            background: #00d9ff;
+            border-color: #00d9ff;
         }
         .container {
             max-width: 100%;
@@ -318,7 +342,8 @@
 </head>
 <body>
     <div class="container">
-        <h1>ARC-AGI-3 Leaderboard History</h1>
+        <h1 id="page-title">Leaderboard History</h1>
+        <div id="comp-switcher" class="comp-switcher"></div>
 
         <div id="status" class="status loading">Loading data...</div>
 
@@ -330,11 +355,37 @@
     </div>
 
     <script>
-        // Live JSON endpoint served by leaderboard.py (get_history). Set to ''
-        // to fall back to a static leaderboard.jsonl snapshot in this folder.
-        const ENDPOINT_URL = 'https://tonghuikang--arc3-leaderboard-monitor-get-history.modal.run';
-        const DATA_URL = ENDPOINT_URL || 'leaderboard.jsonl';
+        // The two ARC Prize 2026 tracks. Both share ONE get_history endpoint (served by
+        // leaderboard.py, whose single cron polls both); the track is chosen by the
+        // endpoint's own ?comp= query param. Set an endpoint to '' to fall back to a
+        // static `jsonl` snapshot in this folder. Pick a track in THIS page with
+        // ?comp=arc2 / ?comp=arc3 (default arc3, matching the original URL).
+        const ENDPOINT = 'https://tonghuikang--arc3-leaderboard-monitor-get-history.modal.run';
+        const COMPETITIONS = {
+            arc3: {
+                label: 'ARC-AGI-3',
+                endpoint: ENDPOINT,  // default track, no param needed
+                jsonl: 'leaderboard.jsonl',
+            },
+            arc2: {
+                label: 'ARC-AGI-2',
+                endpoint: `${ENDPOINT}?comp=arc2`,
+                jsonl: 'leaderboard2.jsonl',
+            },
+        };
+        const COMP = COMPETITIONS[new URLSearchParams(location.search).get('comp')] ? new URLSearchParams(location.search).get('comp') : 'arc3';
+        const CONF = COMPETITIONS[COMP];
+
+        const ENDPOINT_URL = CONF.endpoint;
+        const DATA_URL = ENDPOINT_URL || CONF.jsonl;
         const REFRESH_MS = 60000;  // matches the per-minute cron; only used with a live endpoint
+
+        // Title + track switcher chrome.
+        document.title = `${CONF.label} Leaderboard Monitor`;
+        document.getElementById('page-title').textContent = `${CONF.label} Leaderboard History`;
+        document.getElementById('comp-switcher').innerHTML = Object.entries(COMPETITIONS)
+            .map(([key, c]) => `<a href="?comp=${key}" class="${key === COMP ? 'active' : ''}">${c.label}</a>`)
+            .join('');
 
         // Module-scope view state so auto-refresh can re-render without resetting sort.
         let positions = [];

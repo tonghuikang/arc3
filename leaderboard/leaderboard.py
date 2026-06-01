@@ -1,13 +1,19 @@
-# Leaderboard listener for the ARC Prize 2026 / ARC-AGI-3 Kaggle competition.
+# Leaderboard listener for the ARC Prize 2026 Kaggle competitions (ARC-AGI-2 + ARC-AGI-3).
 #
-# Polls the public Kaggle leaderboard every minute, records each team's score
-# history into persistent Modal Dicts, and serves it as JSON for leaderboard.html.
+# A SINGLE per-minute cron polls BOTH public Kaggle leaderboards in one run, records each
+# team's score history into per-competition persistent Modal Dicts, and serves each track
+# as JSON via one get_history endpoint (select the track with ?comp=arc2 / ?comp=arc3;
+# no param defaults to arc3). leaderboard.html reads these and auto-refreshes each minute.
 #
 #   uv run modal deploy leaderboard/leaderboard.py
 #   uv run modal app logs arc3-leaderboard-monitor
 #
-# Requires a Modal secret named "kaggle" exposing KAGGLE_API_TOKEN (the verbatim
-# contents of your ~/.kaggle/kaggle.json), e.g.:
+# The Modal app stays named "arc3-leaderboard-monitor" so the existing ARC-AGI-3 endpoint
+# URL keeps working unchanged; it now serves both tracks. The arc3-/arc2- Dicts persist by
+# name independently of the app, so the accumulated ARC-AGI-3 history is preserved.
+#
+# Requires a Modal secret named "kaggle" exposing KAGGLE_API_TOKEN (the verbatim contents
+# of your ~/.kaggle/kaggle.json), e.g.:
 #   uv run modal secret create kaggle KAGGLE_API_TOKEN="$(cat ~/.kaggle/kaggle.json)"
 
 import os
@@ -15,15 +21,25 @@ from datetime import datetime
 
 import modal
 
-COMPETITION = "arc-prize-2026-arc-agi-3"
+# Each track: competition_key -> (kaggle slug, positions Dict name, history Dict name).
+# The Dict names are kept (arc3-*, arc2-*) so existing history survives the consolidation.
+COMPETITIONS = {
+    "arc3": ("arc-prize-2026-arc-agi-3", "arc3-leaderboard-positions", "arc3-leaderboard-history"),
+    "arc2": ("arc-prize-2026-arc-agi-2", "arc2-leaderboard-positions", "arc2-leaderboard-history"),
+}
 
 app = modal.App("arc3-leaderboard-monitor")
 
 image = modal.Image.debian_slim(python_version="3.11").pip_install("kaggle")
 
-# Persistent Dict storage
-positions_dict = modal.Dict.from_name("arc3-leaderboard-positions", create_if_missing=True)
-history_dict = modal.Dict.from_name("arc3-leaderboard-history", create_if_missing=True)
+# Persistent Dict storage, one positions/history pair per competition.
+DICTS = {
+    key: (
+        modal.Dict.from_name(pos_name, create_if_missing=True),
+        modal.Dict.from_name(hist_name, create_if_missing=True),
+    )
+    for key, (_slug, pos_name, hist_name) in COMPETITIONS.items()
+}
 
 # The full per-team history is stored as a single blob under this one key. Modal Dict
 # access is a network round-trip per key, so the previous one-key-per-team layout cost
@@ -58,48 +74,32 @@ def parse_leaderboard_csv(csv_content: str) -> list[dict]:
     return entries
 
 
-@app.function(
-    image=image,
-    secrets=[modal.Secret.from_name("kaggle")],
-    schedule=modal.Cron("* * * * *"),  # Every minute
-    timeout=20 * 60,
-    max_containers=1,
-)
-def check_leaderboard():
+def _check_one(comp_key, competition, positions_dict, history_dict, now):
+    """Poll one competition's leaderboard and record it into its Dicts."""
     import subprocess
+    import time
     from pathlib import Path
 
-    # Setup kaggle credentials from KAGGLE_API_TOKEN
-    kaggle_token = os.environ.get("KAGGLE_API_TOKEN")
-    if kaggle_token:
-        kaggle_dir = Path.home() / ".kaggle"
-        kaggle_dir.mkdir(exist_ok=True)
-        kaggle_json = kaggle_dir / "kaggle.json"
-        kaggle_json.write_text(kaggle_token)
-        kaggle_json.chmod(0o600)
-
-    import time
-
     _t0 = time.perf_counter()
-    now = datetime.utcnow()
     print(f"\n{'=' * 60}")
-    print(f"Leaderboard check at {now.isoformat()} UTC")
-    print(f"{'=' * 60}\n")
+    print(f"[{comp_key}] {competition} @ {now.isoformat()} UTC")
+    print(f"{'=' * 60}")
 
-    # Download full leaderboard to a temp file (clean up first to avoid stale files)
-    download_dir = Path("/tmp/leaderboard")
+    # Download full leaderboard to a per-competition temp dir (clean up first to avoid
+    # stale files); per-competition so the two tracks never collide within one run.
     import shutil
 
+    download_dir = Path(f"/tmp/leaderboard/{comp_key}")
     if download_dir.exists():
         shutil.rmtree(download_dir)
-    download_dir.mkdir(exist_ok=True)
+    download_dir.mkdir(parents=True, exist_ok=True)
 
     result = subprocess.run(
         [
             "kaggle",
             "competitions",
             "leaderboard",
-            COMPETITION,
+            competition,
             "--download",
             "--path",
             str(download_dir),
@@ -109,8 +109,8 @@ def check_leaderboard():
     )
 
     if result.returncode != 0:
-        print(f"Error: {result.stderr}")
-        return result.stdout
+        print(f"[{comp_key}] Error: {result.stderr}")
+        return
 
     # Extract ZIP if present, then read CSV
     import zipfile
@@ -121,9 +121,9 @@ def check_leaderboard():
 
     csv_files = list(download_dir.glob("*.csv"))
     if not csv_files:
-        print(f"No CSV file found in {download_dir}")
-        print(f"Files: {list(download_dir.iterdir())}")
-        return ""
+        print(f"[{comp_key}] No CSV file found in {download_dir}")
+        print(f"[{comp_key}] Files: {list(download_dir.iterdir())}")
+        return
     csv_file = csv_files[0]
 
     csv_content = csv_file.read_text()
@@ -224,40 +224,72 @@ def check_leaderboard():
 
     _t_written = time.perf_counter()
     print(
-        f"TIMING: download+parse={_t_parsed - _t0:.2f}s | "
+        f"[{comp_key}] TIMING: download+parse={_t_parsed - _t0:.2f}s | "
         f"load_history={_t_loaded - _t_parsed:.2f}s | "
         f"loop(in-memory)={_t_looped - _t_loaded:.2f}s | "
         f"write={_t_written - _t_looped:.2f}s | "
         f"total={_t_written - _t0:.2f}s"
     )
 
-    print(f"Stored {len(leaderboard_positions)} teams in positions")
-    print(f"New submissions recorded: {new_submissions}")
-    print(f"Scores updated (late rescoring): {updated_scores}")
+    print(f"[{comp_key}] Stored {len(leaderboard_positions)} teams in positions")
+    print(f"[{comp_key}] New submissions recorded: {new_submissions}")
+    print(f"[{comp_key}] Scores updated (late rescoring): {updated_scores}")
 
     # Print top 10 for quick reference
-    print("\nTop 10:")
+    print(f"\n[{comp_key}] Top 10:")
     print(f"{'Pos':>4} {'Team':<25} {'Score':>6} {'Subs':>5}")
     print(f"{'-' * 4} {'-' * 25} {'-' * 6} {'-' * 5}")
     for pos in leaderboard_positions[:10]:
         team_id, team_name, position, sub_count, score = pos
         print(f"{position:>4} {team_name[:25]:<25} {score:>6} {sub_count:>5}")
 
-    return result.stdout
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("kaggle")],
+    schedule=modal.Cron("* * * * *"),  # Every minute, for BOTH tracks
+    timeout=20 * 60,
+    max_containers=1,
+)
+def check_leaderboards():
+    from pathlib import Path
+
+    # Setup kaggle credentials from KAGGLE_API_TOKEN
+    kaggle_token = os.environ.get("KAGGLE_API_TOKEN")
+    if kaggle_token:
+        kaggle_dir = Path.home() / ".kaggle"
+        kaggle_dir.mkdir(exist_ok=True)
+        kaggle_json = kaggle_dir / "kaggle.json"
+        kaggle_json.write_text(kaggle_token)
+        kaggle_json.chmod(0o600)
+
+    # One run polls both competitions. A failure on one track is isolated so it never
+    # blocks the other (Kaggle occasionally errors on a single competition).
+    now = datetime.utcnow()
+    for comp_key, (slug, _pos_name, _hist_name) in COMPETITIONS.items():
+        positions_dict, history_dict = DICTS[comp_key]
+        try:
+            _check_one(comp_key, slug, positions_dict, history_dict, now)
+        except Exception as e:  # noqa: BLE001 - keep the other track running
+            print(f"[{comp_key}] FAILED: {type(e).__name__}: {e}")
 
 
 @app.function(max_containers=1)
 @modal.fastapi_endpoint(method="GET")
-def get_history():
-    """Return leaderboard positions and historical scores as JSON.
+def get_history(comp: str = "arc3"):
+    """Return one track's leaderboard positions and historical scores as JSON.
 
-    Format:
+    Query param ?comp=arc2 / ?comp=arc3 (default arc3). Format:
     {
         "positions": [[team_id, team_name, position, submission_count, score], ...],
         "history": {team_id: {date: [score, minutes_taken]}}
     }
     """
     from fastapi.responses import JSONResponse
+
+    if comp not in DICTS:
+        comp = "arc3"
+    positions_dict, _history_dict = DICTS[comp]
 
     # Single lookup - cached by cron job
     cached = positions_dict.get("cached_response", {"positions": [], "history": {}})
