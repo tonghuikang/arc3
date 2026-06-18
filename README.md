@@ -5,3 +5,5 @@ I participated in "Autoresearch Systems [Hackathon](https://luma.com/fvz1h1dq) w
 This work is for an ongoing Kaggle [competition](https://www.kaggle.com/competitions/arc-prize-2026-arc-agi-3/).
 
 Please visit https://tonghuikang.github.io/arc3/ for the autoresearch graph.
+
+The leaderboard is available at http://tonghuikang.github.io/arc3/leaderboard/.

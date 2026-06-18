@@ -5,17 +5,19 @@ Kaggle tracks, modeled on [aimo3's `leaderboard.*`](https://github.com/tonghuika
 
 | Track | Competition | View |
 |-------|-------------|------|
-| **ARC-AGI-3** | [`arc-prize-2026-arc-agi-3`](https://www.kaggle.com/competitions/arc-prize-2026-arc-agi-3) | `leaderboard.html` (default) |
-| **ARC-AGI-2** | [`arc-prize-2026-arc-agi-2`](https://www.kaggle.com/competitions/arc-prize-2026-arc-agi-2) | `leaderboard.html?comp=arc2` |
+| **ARC-AGI-3** | [`arc-prize-2026-arc-agi-3`](https://www.kaggle.com/competitions/arc-prize-2026-arc-agi-3) | `/leaderboard/` (default) |
+| **ARC-AGI-2** | [`arc-prize-2026-arc-agi-2`](https://www.kaggle.com/competitions/arc-prize-2026-arc-agi-2) | `/leaderboard/?comp=arc2` |
 
 - **`leaderboard.py`** — a single [Modal](https://modal.com) app (`arc3-leaderboard-monitor`). One
   per-minute cron polls **both** public Kaggle leaderboards via the `kaggle` CLI in one run, records
   each team's score history into per-competition persistent Modal `Dict`s (`arc3-*` and `arc2-*`), and
   exposes one `get_history` JSON endpoint that returns a track by `?comp=arc2` / `?comp=arc3`. A failure
   on one track is isolated so it never blocks the other.
-- **`leaderboard.html`** — a single viewer (teams × days, with running-high-score highlighting and
+- **`index.html`** — a single viewer (teams × days, with running-high-score highlighting and
   public/private sort) that fetches the live endpoint and auto-refreshes each minute. Pick a track
   with `?comp=arc3` (default) or `?comp=arc2`, or use the switcher in the header.
+- **`leaderboard.html`** — a compatibility redirect to `./` so older links keep working while the
+  visible URL becomes `/leaderboard/`.
 
 The app is named `arc3-leaderboard-monitor` (rather than something track-neutral) so the original
 ARC-AGI-3 endpoint URL keeps working unchanged now that it also serves ARC-AGI-2. The `arc3-`/`arc2-`
@@ -44,7 +46,7 @@ https://tonghuikang--arc3-leaderboard-monitor-get-history.modal.run            #
 https://tonghuikang--arc3-leaderboard-monitor-get-history.modal.run?comp=arc2  # ARC-AGI-2
 ```
 
-It is baked into `leaderboard.html` as `ENDPOINT`. If you redeploy under a different Modal workspace,
+It is baked into `index.html` as `ENDPOINT`. If you redeploy under a different Modal workspace,
 update that constant (or set a track's `endpoint` to `''` to read a static `leaderboard.jsonl` /
 `leaderboard2.jsonl` snapshot from this folder instead).
 
@@ -59,5 +61,5 @@ update that constant (or set a track's `endpoint` to `''` to read a static `lead
 }
 ```
 
-`leaderboard.html` also accepts a static `<track>.jsonl` (one team record per line, with optional
+`index.html` also accepts a static `<track>.jsonl` (one team record per line, with optional
 `final_rank`/`final_score`) for an archived post-competition snapshot.
