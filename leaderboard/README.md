@@ -13,8 +13,8 @@ Kaggle tracks, modeled on [aimo3's `leaderboard.*`](https://github.com/tonghuika
   each team's score history into per-competition persistent Modal `Dict`s (`arc3-*` and `arc2-*`), and
   exposes one `get_history` JSON endpoint that returns a track by `?comp=arc2` / `?comp=arc3`. A failure
   on one track is isolated so it never blocks the other.
-- **`index.html`** — a single viewer (teams × days, with running-high-score highlighting and
-  public/private sort) that fetches the live endpoint and auto-refreshes each minute. Pick a track
+- **`index.html`** — a single viewer (teams × days, with running-high-score highlighting) that
+  fetches the live endpoint and auto-refreshes each minute. Pick a track
   with `?comp=arc3` (default) or `?comp=arc2`, or use the switcher in the header.
 - **`leaderboard.html`** — a compatibility redirect to `./` so older links keep working while the
   visible URL becomes `/leaderboard/`.
