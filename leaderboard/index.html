@@ -14,6 +14,11 @@
             padding: 20px;
             background: #1a1a2e;
             color: #eee;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
         h1 {
             text-align: center;
@@ -48,7 +53,11 @@
         .container {
             max-width: 100%;
             margin: 0 auto;
-            overflow-x: auto;
+            width: 100%;
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
         }
         .status {
             text-align: center;
@@ -70,9 +79,11 @@
         .grid-container {
             background: #16213e;
             border-radius: 8px;
-            padding: 10px;
-            overflow-x: auto;
+            padding: 0;
+            overflow: auto;
             -webkit-overflow-scrolling: touch;
+            flex: 0 1 auto;
+            min-height: 0;
         }
         .grid-container h2 {
             color: #00d9ff;
@@ -132,25 +143,26 @@
             color: #00d9ff;
             font-weight: 600;
             height: var(--header-height);
+            position: sticky;
+            top: 0;
+            z-index: 2;
         }
         th.team-header {
             text-align: left;
             width: var(--team-width);
             min-width: var(--team-width);
             max-width: var(--team-width);
-            position: sticky;
             left: var(--pos-width);
             background: #0d1b2a;
-            transform: translateZ(1px);
+            z-index: 3;
         }
         th.pos-header {
             width: var(--pos-width);
             min-width: var(--pos-width);
             max-width: var(--pos-width);
-            position: sticky;
             left: 0;
             background: #0d1b2a;
-            transform: translateZ(2px);
+            z-index: 3;
         }
         td.pos-cell {
             font-weight: 500;
@@ -160,6 +172,7 @@
             max-width: var(--pos-width);
             position: sticky;
             left: 0;
+            z-index: 1;
             background: #16213e;
             padding-left: 4px;
             padding-right: 4px;
@@ -181,16 +194,16 @@
             text-overflow: ellipsis;
             position: sticky;
             left: var(--pos-width);
+            z-index: 1;
             background: #16213e;
         }
         th.score-header {
             width: var(--score-width);
             min-width: var(--score-width);
             max-width: var(--score-width);
-            position: sticky;
             left: calc(var(--pos-width) + var(--team-width));
             background: #0d1b2a;
-            transform: translateZ(1px);
+            z-index: 3;
             padding-left: 3px;
             padding-right: 3px;
         }
@@ -200,6 +213,7 @@
             max-width: var(--score-width);
             position: sticky;
             left: calc(var(--pos-width) + var(--team-width));
+            z-index: 1;
             background: #16213e;
             padding-left: 3px;
             padding-right: 3px;
@@ -273,7 +287,7 @@
                 font-size: 0.75rem;
             }
             .grid-container {
-                padding: 5px;
+                padding: 0;
                 border-radius: 4px;
             }
             table {
@@ -548,8 +562,10 @@
 
         function render() {
             const gridEl = document.getElementById('grid-table');
+            const scroller = document.querySelector('.grid-container');
             if (activeObserver) { activeObserver.disconnect(); activeObserver = null; }
-            const scrollY = window.scrollY;
+            const scrollTop = scroller.scrollTop;
+            const scrollLeft = scroller.scrollLeft;
             sortPositions(positions, sortMode);
             gridEl.innerHTML = buildSkeleton(sortedDates, sortMode);
             const tbody = document.getElementById('rows');
@@ -572,10 +588,11 @@
                         activeObserver = null;
                         sentinel.remove();
                     }
-                }, { rootMargin: '800px' });
+                }, { root: scroller, rootMargin: '800px' });
                 activeObserver.observe(sentinel);
             }
-            window.scrollTo(0, scrollY);
+            scroller.scrollTop = scrollTop;
+            scroller.scrollLeft = scrollLeft;
         }
 
         async function loadData() {
