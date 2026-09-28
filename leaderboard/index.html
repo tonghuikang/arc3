@@ -381,7 +381,6 @@
 
         const ENDPOINT_URL = CONF.endpoint;
         const DATA_URL = ENDPOINT_URL || CONF.jsonl;
-        const REFRESH_MS = 60000;  // matches the per-minute cron; only used with a live endpoint
         const DISPLAY_START_DATE = '2026-06-01';
 
         // Title + track switcher chrome.
@@ -391,7 +390,7 @@
             .map(([key, c]) => `<a href="?comp=${key}" class="${key === COMP ? 'active' : ''}">${c.label}</a>`)
             .join('');
 
-        // Module-scope view state so auto-refresh can re-render without resetting sort.
+        // Module-scope view state so re-renders (sort changes) don't refetch.
         let positions = [];
         let history = {};
         let sortedDates = [];
@@ -638,7 +637,7 @@
                 const live = !!ENDPOINT_URL;
                 statusEl.className = 'status success';
                 statusEl.textContent = live
-                    ? `Live — ${positions.length} teams. Updated ${hh}:${mm}, auto-refreshing every minute.`
+                    ? `Live — ${positions.length} teams. Updated ${hh}:${mm}. Reload the page for newer data.`
                     : `Static snapshot — ${positions.length} teams. Times may vary by up to 30 minutes.`;
             } catch (e) {
                 statusEl.className = 'status error';
@@ -648,9 +647,6 @@
         }
 
         loadData();
-        if (ENDPOINT_URL) {
-            setInterval(loadData, REFRESH_MS);
-        }
     </script>
 </body>
 </html>

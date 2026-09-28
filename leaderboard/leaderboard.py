@@ -3,7 +3,7 @@
 # A SINGLE per-minute cron polls BOTH public Kaggle leaderboards in one run, records each
 # team's score history into per-competition persistent Modal Dicts, and serves each track
 # as JSON via one get_history endpoint (select the track with ?comp=arc2 / ?comp=arc3;
-# no param defaults to arc3). leaderboard.html reads these and auto-refreshes each minute.
+# no param defaults to arc3). leaderboard.html reads these once on page load.
 #
 #   uv run modal deploy leaderboard/leaderboard.py
 #   uv run modal app logs arc3-leaderboard-monitor
