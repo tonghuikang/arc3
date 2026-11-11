@@ -359,7 +359,6 @@
         // The two ARC Prize 2026 tracks, served as static JSON snapshots of the (now
         // stopped) get_history endpoint in leaderboard.py. Pick a track in THIS page with
         // ?comp=arc2 / ?comp=arc3 (default arc3, matching the original URL).
-        const SNAPSHOT_DATE = '2026-11-10';
         const COMPETITIONS = {
             arc3: {
                 label: 'ARC-AGI-3',
@@ -627,7 +626,7 @@
                 render();
 
                 statusEl.className = 'status success';
-                statusEl.textContent = `Static snapshot — ${positions.length} teams, taken ${SNAPSHOT_DATE}. Times may vary by up to 30 minutes.`;
+                statusEl.textContent = `Snapshot as of competition end — ${positions.length} teams. Times may vary by up to 30 minutes.`;
             } catch (e) {
                 statusEl.className = 'status error';
                 statusEl.textContent = `Error: ${e.message}`;
