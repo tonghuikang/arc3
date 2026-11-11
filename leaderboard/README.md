@@ -8,13 +8,13 @@ Kaggle tracks, modeled on [aimo3's `leaderboard.*`](https://github.com/tonghuika
 | **ARC-AGI-3** | [`arc-prize-2026-arc-agi-3`](https://www.kaggle.com/competitions/arc-prize-2026-arc-agi-3) | `/leaderboard/` (default) |
 | **ARC-AGI-2** | [`arc-prize-2026-arc-agi-2`](https://www.kaggle.com/competitions/arc-prize-2026-arc-agi-2) | `/leaderboard/?comp=arc2` |
 
-- **`leaderboard.py`** — a single [Modal](https://modal.com) app (`arc3-leaderboard-monitor`). One
-  per-minute cron polls **both** public Kaggle leaderboards via the `kaggle` CLI in one run, records
+- **`leaderboard.py`** — a single [Modal](https://modal.com) app (`arc3-leaderboard-monitor`). Its
+  cron is currently disabled (the `schedule=` line was removed); when enabled, it polls **both** public Kaggle leaderboards via the `kaggle` CLI in one run, records
   each team's score history into per-competition persistent Modal `Dict`s (`arc3-*` and `arc2-*`), and
   exposes one `get_history` JSON endpoint that returns a track by `?comp=arc2` / `?comp=arc3`. A failure
   on one track is isolated so it never blocks the other.
 - **`index.html`** — a single viewer (teams × days, with running-high-score highlighting) that
-  fetches the live endpoint and auto-refreshes each minute. Pick a track
+  reads static snapshots of the endpoint (`arc3.json`, `arc2.json`, taken 2026-11-10). Pick a track
   with `?comp=arc3` (default) or `?comp=arc2`, or use the switcher in the header.
 - **`leaderboard.html`** — a compatibility redirect to `./` so older links keep working while the
   visible URL becomes `/leaderboard/`.

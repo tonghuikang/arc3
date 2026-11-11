@@ -1,9 +1,10 @@
 # Leaderboard listener for the ARC Prize 2026 Kaggle competitions (ARC-AGI-2 + ARC-AGI-3).
 #
-# A SINGLE per-minute cron polls BOTH public Kaggle leaderboards in one run, records each
+# The per-minute cron is currently disabled (no schedule= on check_leaderboards); the page
+# reads static snapshots (arc3.json / arc2.json). When enabled, a SINGLE cron polls BOTH public Kaggle leaderboards in one run, records each
 # team's score history into per-competition persistent Modal Dicts, and serves each track
 # as JSON via one get_history endpoint (select the track with ?comp=arc2 / ?comp=arc3;
-# no param defaults to arc3). leaderboard.html reads these once on page load.
+# no param defaults to arc3). 
 #
 #   uv run modal deploy leaderboard/leaderboard.py
 #   uv run modal app logs arc3-leaderboard-monitor
@@ -247,7 +248,6 @@ def _check_one(comp_key, competition, positions_dict, history_dict, now):
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("kaggle")],
-    schedule=modal.Cron("* * * * *"),  # Every minute, for BOTH tracks
     timeout=20 * 60,
     max_containers=1,
 )

@@ -356,31 +356,26 @@
     </div>
 
     <script>
-        // The two ARC Prize 2026 tracks. Both share ONE get_history endpoint (served by
-        // leaderboard.py, whose single cron polls both); the track is chosen by the
-        // endpoint's own ?comp= query param. Set an endpoint to '' to fall back to a
-        // static `jsonl` snapshot in this folder. Pick a track in THIS page with
+        // The two ARC Prize 2026 tracks, served as static JSON snapshots of the (now
+        // stopped) get_history endpoint in leaderboard.py. Pick a track in THIS page with
         // ?comp=arc2 / ?comp=arc3 (default arc3, matching the original URL).
-        const ENDPOINT = 'https://tonghuikang--arc3-leaderboard-monitor-get-history.modal.run';
+        const SNAPSHOT_DATE = '2026-11-10';
         const COMPETITIONS = {
             arc3: {
                 label: 'ARC-AGI-3',
-                endpoint: ENDPOINT,  // default track, no param needed
-                jsonl: 'leaderboard.jsonl',
+                data: 'arc3.json',
                 runtimeCutoffMinutes: 600,
             },
             arc2: {
                 label: 'ARC-AGI-2',
-                endpoint: `${ENDPOINT}?comp=arc2`,
-                jsonl: 'leaderboard2.jsonl',
+                data: 'arc2.json',
                 runtimeCutoffMinutes: 750,
             },
         };
         const COMP = COMPETITIONS[new URLSearchParams(location.search).get('comp')] ? new URLSearchParams(location.search).get('comp') : 'arc3';
         const CONF = COMPETITIONS[COMP];
 
-        const ENDPOINT_URL = CONF.endpoint;
-        const DATA_URL = ENDPOINT_URL || CONF.jsonl;
+        const DATA_URL = CONF.data;
         const DISPLAY_START_DATE = '2026-06-01';
 
         // Title + track switcher chrome.
@@ -425,7 +420,7 @@
             return Array.from(allDates).sort((a, b) => b.localeCompare(a));
         }
 
-        // Accepts either the live endpoint shape {positions, history} or a static
+        // Accepts either the endpoint shape {positions, history} (the JSON snapshots) or a
         // leaderboard.jsonl (one team record per line).
         function parseData(text) {
             const trimmed = text.trim();
@@ -604,7 +599,7 @@
             }
 
             try {
-                const response = await fetch(DATA_URL, { cache: 'no-store' });
+                const response = await fetch(DATA_URL);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);
                 }
@@ -613,7 +608,7 @@
 
                 if (parsed.positions.length === 0) {
                     statusEl.className = 'status';
-                    statusEl.textContent = 'No data available yet — the listener may not have run its first poll.';
+                    statusEl.textContent = 'No data available.';
                     gridEl.innerHTML = '<div class="no-data">No data.</div>';
                     return;
                 }
@@ -631,14 +626,8 @@
 
                 render();
 
-                const now = new Date();
-                const hh = String(now.getHours()).padStart(2, '0');
-                const mm = String(now.getMinutes()).padStart(2, '0');
-                const live = !!ENDPOINT_URL;
                 statusEl.className = 'status success';
-                statusEl.textContent = live
-                    ? `Live — ${positions.length} teams. Updated ${hh}:${mm}. Reload the page for newer data.`
-                    : `Static snapshot — ${positions.length} teams. Times may vary by up to 30 minutes.`;
+                statusEl.textContent = `Static snapshot — ${positions.length} teams, taken ${SNAPSHOT_DATE}. Times may vary by up to 30 minutes.`;
             } catch (e) {
                 statusEl.className = 'status error';
                 statusEl.textContent = `Error: ${e.message}`;
